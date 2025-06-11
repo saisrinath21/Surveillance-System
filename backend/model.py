@@ -23,7 +23,8 @@ def detection_loop(user_id):
             cv2.imwrite('templates/alert_frame.jpg', frame)
             conn = sqlite3.connect('database.db')
             cursor = conn.cursor()
-            cursor.execute("SELECT phone_number FROM users WHERE id = ?", (user_id,))
+            print("Fetching user WhatsApp number from database...")
+            cursor.execute("SELECT phone FROM users WHERE id = ?", (user_id,))
             result = cursor.fetchone()
             user_whatsapp_number = result
             conn.close()
@@ -36,7 +37,7 @@ def detection_loop(user_id):
 def start_detection(user_id):
     global model_running, thread
     model_running = True
-    thread = threading.Thread(target=detection_loop(user_id))
+    thread = threading.Thread(target=detection_loop, args=(user_id,))
     thread.start()
 
 def stop_detection():
