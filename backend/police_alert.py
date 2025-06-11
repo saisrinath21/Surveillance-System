@@ -1,9 +1,12 @@
-import webbrowser
 from geopy.geocoders import Nominatim
 from twilio.rest import Client
 import requests
 import sqlite3
 from geopy.distance import geodesic
+from flask import jsonify, Flask, request
+app = Flask(__name__)
+
+geolocator = Nominatim(user_agent="geoapi")
 
 # Twilio and Imgur credentials
 ACCOUNT_SID = 'your_account_sid'
@@ -33,9 +36,9 @@ def alert_user_via_whatsapp(image_path, user_whatsapp_number):
         to=f'whatsapp:{user_whatsapp_number}',
         media_url=[image_url]
     )
-    print(f"WhatsApp alert sent. Message SID: {message.sid}")
+    return jsonify({"message": "WhatsApp alert sent", "sid": message.sid})
 
-def search_police_station(district, user_address):
+def search_police_station(district, user_coord):
     # Connect to the database and get all police stations in the district
     con = sqlite3.connect('police_database.db')
     cur = con.cursor()
@@ -45,14 +48,8 @@ def search_police_station(district, user_address):
 
     if not stations:
         return None
-
-    # Get user's coordinates
-    geolocator = Nominatim(user_agent="geoapi")
-    user_location = geolocator.geocode(user_address)
-    if not user_location:
-        return None
-    user_coords = (user_location.latitude, user_location.longitude)
-
+    # Calculate coordinates for the user
+    user_coords = (user_coord.latitude, user_coord.longitude)
     # Calculate distances
     station_distances = []
     for address, phone in stations:
@@ -76,24 +73,19 @@ def search_police_station(district, user_address):
     return nearest_phone
 
 def call_police(user_address, user_phone_number):
-    geolocator = Nominatim(user_agent="geoapi")
     location = geolocator.geocode(user_address)
     if not location:
-        print("Could not find location for the given address.")
-        return
+        return jsonify({"Could not find location for the given address."})
 
     print(f"User location: {location.address}")
-    district = location.raw.get("address", {}).get("country", "") or \
-               location.raw.get("address", {}).get("state", "") or \
-               location.raw.get("address", {}).get("district", "")
+    district = location.raw.get("address", {}).get("district", "")
+    if not district:
+        return jsonify({"error": "District information could not be extracted from the address."})
 
-    police_phone_number = search_police_station(district)
+    police_phone_number = search_police_station(district, location)
 
     if not police_phone_number:
-        print("Could not find a nearby police station in the database.")
-        return
-
-    print(f"Nearest police station phone: {police_phone_number}")
+        return jsonify({"Could not find a nearby police station in the database."})
 
     try:
         conference_name = "EmergencyAlertConference"
@@ -110,6 +102,6 @@ def call_police(user_address, user_phone_number):
             twiml=f'<Response><Dial><Conference>{conference_name}</Conference></Dial></Response>'
         )
 
-        print("Conference call initiated between user and nearest police station.")
-    except Exception as e:
-        print("Error initiating conference call:", e)
+        return jsonify({"Conference call initiated between user and nearest police station."})
+    except Exception as e: 
+        return jsonify({"error": f"Error initiating conference call: {str(e)}"})
