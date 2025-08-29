@@ -73,4 +73,3 @@ streamlit run police_app.py
 
 ## License
 MIT License
-# Surveillance-System
