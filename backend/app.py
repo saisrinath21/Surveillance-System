@@ -37,6 +37,26 @@ def init_db():
     con.commit()
     con.close()
 
+# Forgot Password endpoint
+@app.route('/forgot-password', methods=['POST'])
+def forgot_password():
+    data = request.json
+    username = data.get('username')
+    phone = data.get('phone')
+    new_password = data.get('new_password')
+    if not username or not phone or not new_password:
+        return jsonify({'error': 'Missing required fields'}), 400
+    con = sqlite3.connect('database.db')
+    cur = con.cursor()
+    cur.execute('SELECT * FROM users WHERE username=? AND phone=?', (username, phone))
+    user = cur.fetchone()
+    if not user:
+        con.close()
+        return jsonify({'error': 'User not found or phone number does not match'}), 404
+    cur.execute('UPDATE users SET password=? WHERE username=? AND phone=?', (new_password, username, phone))
+    con.commit()
+    con.close()
+    return jsonify({'message': 'Password reset successful'}), 200
 
 @app.route('/register', methods=['POST'])
 def register():
@@ -195,6 +215,5 @@ def call_police_route():
     return police_alert.call_police(user_address, user_phone_number)
 
 
-if __name__ == '__main__':
-    init_db()
+if __name__ == "__main__":
     app.run(debug=True)

@@ -1,107 +1,64 @@
-from geopy.geocoders import Nominatim
-from twilio.rest import Client
+import streamlit as st
 import requests
-import sqlite3
-from geopy.distance import geodesic
-from flask import jsonify, Flask, request
-app = Flask(__name__)
 
-geolocator = Nominatim(user_agent="geoapi")
+BASE_URL = "http://127.0.0.1:5000"
+session = requests.Session()
 
-# Twilio and Imgur credentials
-ACCOUNT_SID = 'your_account_sid'
-AUTH_TOKEN = 'your_auth_token'
-FROM_NUMBER = 'your_twilio_number'
-IMGUR_CLIENT_ID = 'your_imgur_client_id'
+def police_register():
+    st.subheader("Police Registration")
+    code = st.text_input("Police Code")
+    password = st.text_input("Password", type="password")
+    address = st.text_input("Address")
+    phone = st.text_input("Phone Number")
 
-client = Client(ACCOUNT_SID, AUTH_TOKEN)
+    if st.button("Register"):
+        data = {
+            "code": code,
+            "password": password,
+            "address": address,
+            "phone": phone
+        }
+        res = session.post(f"{BASE_URL}/police-register", json=data)
+        st.write(res.json())
 
-def upload_image_to_imgur(image_path):
-    headers = {"Authorization": f"Client-ID {IMGUR_CLIENT_ID}"}
-    with open(image_path, "rb") as img:
-        response = requests.post("https://api.imgur.com/3/image", headers=headers, files={"image": img})
-    response.raise_for_status()
-    return response.json()["data"]["link"]
+def police_login():
+    st.subheader("Police Login")
+    code = st.text_input("Police Code")
+    password = st.text_input("Password", type="password")
 
-def alert_user_via_whatsapp(image_path, user_whatsapp_number):
-    image_url = upload_image_to_imgur(image_path)
-    message = client.messages.create(
-        body=(
-            "\ud83d\udea8 *Movement Detected at Your Gate!*\n"
-            "Please review the image and reply with:\n"
-            "`OK` – All good\n"
-            "`NOT OK` – Call the police immediately"
-        ),
-        from_='whatsapp:+14155238886',  # Twilio sandbox number
-        to=f'whatsapp:{user_whatsapp_number}',
-        media_url=[image_url]
-    )
-    return jsonify({"message": "WhatsApp alert sent", "sid": message.sid})
+    if st.button("Login"):
+        data = {"code": code, "password": password}
+        res = session.post(f"{BASE_URL}/police-login", json=data)
+        if res.status_code == 200:
+            st.session_state["police_logged_in"] = True
+            st.session_state["police_code"] = code
+            st.success("Login successful")
+        else:
+            st.error(res.json().get("error"))
 
-def search_police_station(district, user_coord):
-    # Connect to the database and get all police stations in the district
-    con = sqlite3.connect('police_database.db')
-    cur = con.cursor()
-    cur.execute("SELECT address, phone FROM police WHERE district = ?", (district,))
-    stations = cur.fetchall()
-    con.close()
+def logout():
+    res = session.get(f"{BASE_URL}/logout", cookies=session.cookies)
+    if res.status_code == 200:
+        st.session_state.clear()
+        st.success("Logged out successfully")
 
-    if not stations:
-        return None
-    # Calculate coordinates for the user
-    user_coords = (user_coord.latitude, user_coord.longitude)
-    # Calculate distances
-    station_distances = []
-    for address, phone in stations:
-        station_location = geolocator.geocode(address)
-        if station_location:
-            station_coords = (station_location.latitude, station_location.longitude)
-            distance = geodesic(user_coords, station_coords).kilometers
-            station_distances.append((distance, phone))
+def main():
+    st.title("Police Surveillance Dashboard")
+    if "police_logged_in" not in st.session_state:
+        st.session_state["police_logged_in"] = False
 
-    if not station_distances:
-        return None
+    menu = ["Login", "Register", "Logout"] if st.session_state["police_logged_in"] else ["Login", "Register"]
+    choice = st.sidebar.selectbox("Navigation", menu)
 
-    nearest_phone = None
-    min_distance = float('inf')
+    if choice == "Register":
+        police_register()
+    elif choice == "Login":
+        if not st.session_state["police_logged_in"]:
+            police_login()
+        else:
+            st.success(f"Already logged in as {st.session_state['police_code']}")
+    elif choice == "Logout":
+        logout()
 
-    for distance, phone in station_distances:
-        if distance < min_distance:
-            min_distance = distance
-            nearest_phone = phone
-            
-    return nearest_phone
-
-def call_police(user_address, user_phone_number):
-    location = geolocator.geocode(user_address)
-    if not location:
-        return jsonify({"Could not find location for the given address."})
-
-    print(f"User location: {location.address}")
-    district = location.raw.get("address", {}).get("district", "")
-    if not district:
-        return jsonify({"error": "District information could not be extracted from the address."})
-
-    police_phone_number = search_police_station(district, location)
-
-    if not police_phone_number:
-        return jsonify({"Could not find a nearby police station in the database."})
-
-    try:
-        conference_name = "EmergencyAlertConference"
-
-        client.calls.create(
-            to=police_phone_number,
-            from_=FROM_NUMBER,
-            twiml=f'<Response><Dial><Conference>{conference_name}</Conference></Dial></Response>'
-        )
-
-        client.calls.create(
-            to=user_phone_number,
-            from_=FROM_NUMBER,
-            twiml=f'<Response><Dial><Conference>{conference_name}</Conference></Dial></Response>'
-        )
-
-        return jsonify({"Conference call initiated between user and nearest police station."})
-    except Exception as e: 
-        return jsonify({"error": f"Error initiating conference call: {str(e)}"})
+if __name__ == "__main__":
+    main()
