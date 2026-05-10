@@ -20,9 +20,9 @@ Surveillance-System-main/
 │   ├── database.db           # User database (SQLite)
 │   ├── police_database.db    # Police database (SQLite)
 │   └── requirements.txt      # Backend dependencies
-│
-├── user_app.py               # Streamlit frontend for users
-├── police_app.py             # Streamlit frontend for police
+├── frontend/
+│   ├── user_app.py               # Streamlit frontend for users
+│   └── police_app.py             # Streamlit frontend for police
 └── README.md                 # Project documentation
 ```
 
@@ -36,12 +36,11 @@ cd Surveillance-System-main
 
 ### 2. Install Backend Dependencies
 ```sh
-cd backend
 pip install -r requirements.txt
 ```
 
 ### 3. Configure Environment Variables
-- Set your Twilio, AWS S3, and other credentials in `police_alert.py`.
+- Set your Twilio, AWS S3, and other credentials in `.env`.
 
 ### 4. Run the Backend (Flask API)
 ```sh
@@ -51,12 +50,13 @@ python app.py
 
 ### 5. Run the User Frontend (Streamlit)
 ```sh
-cd ..
+cd frontend
 streamlit run user_app.py
 ```
 
 ### 6. Run the Police Frontend (Streamlit)
 ```sh
+cd frontend
 streamlit run police_app.py
 ```
 
@@ -73,3 +73,4 @@ streamlit run police_app.py
 
 ## License
 MIT License
+# Surveillance-System

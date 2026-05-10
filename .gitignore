@@ -1,0 +1,5 @@
+.env
+AWS_S3_INTEGRATION.md
+backend/__pycache__/
+backend/database.db
+backend/policealert.py

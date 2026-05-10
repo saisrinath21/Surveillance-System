@@ -1,0 +1,8 @@
+flask
+flask-cors
+twilio
+requests
+streamlit
+geopy
+boto3
+opencv-python
