@@ -74,3 +74,10 @@ streamlit run police_app.py
 ## License
 MIT License
 # Surveillance-System
+
+## 📋 Still To Do
+-check the features, otp verfication and edit profile
+-camera management system
+-rtsp
+-socketio for loadAlert, loadDetectionstatus
+-deploy

@@ -1,5 +1,7 @@
 .env
-AWS_S3_INTEGRATION.md
-backend/__pycache__/
-backend/database.db
-backend/policealert.py
+__pycache__/
+*.pyc
+backend/**/__pycache__/
+backend/yolov8n.pt
+node_modules/
+venv/

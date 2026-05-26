@@ -5,4 +5,4 @@ requests
 streamlit
 geopy
 boto3
-opencv-python
+opencv-pythonPyJWT
