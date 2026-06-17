@@ -1,11 +1,11 @@
 flask
 flask-cors
+flask-socketio
+flask-sqlalchemy
+python-dotenv
+PyJWT
 twilio
-requests
-streamlit
 geopy
 boto3
 opencv-python
-PyJWT
 redis
-sqlalchemy
