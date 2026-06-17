@@ -11,14 +11,21 @@ export default function OTPVerification({ userId, onSuccess, onCancel }) {
   const [resendCooldown, setResendCooldown] = useState(0);
   const inputRefs = useRef([]);
 
+  // const otpSentRef = useRef(false);
+
   useEffect(() => {
-    generateOTP();
+    // if (!otpSentRef.current) {
+      generateOTP();
+    //   otpSentRef.current = true;
+    // }
   }, []);
 
   useEffect(() => {
     if (resendCooldown > 0) {
       const timer = setTimeout(() => setResendCooldown(resendCooldown - 1), 1000);
       return () => clearTimeout(timer);
+    } else {
+      // otpSentRef.current = false;
     }
   }, [resendCooldown]);
 

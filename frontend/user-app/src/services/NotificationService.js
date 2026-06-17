@@ -1,45 +1,54 @@
+import { io } from 'socket.io-client';
+
 class NotificationService {
-  constructor(baseUrl = 'ws://localhost:5000') {
+  constructor(baseUrl = 'http://localhost:8080') {
     this.baseUrl = baseUrl;
-    this.ws = null;
+    this.socket = null;
     this.listeners = [];
     this.isConnected = false;
   }
 
-  connect(userId) {
+  connect() {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      return Promise.reject(new Error('No auth token available'));
+    }
+
     return new Promise((resolve, reject) => {
-      try {
-        this.ws = new WebSocket(`${this.baseUrl}/ws?user_id=${userId}`);
-
-        this.ws.onopen = () => {
-          this.isConnected = true;
-          console.log('WebSocket connected');
-          resolve();
-        };
-
-        this.ws.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data);
-            this.notify(data);
-          } catch (error) {
-            console.error('Error parsing WebSocket message:', error);
-          }
-        };
-
-        this.ws.onerror = (error) => {
-          console.error('WebSocket error:', error);
-          reject(error);
-        };
-
-        this.ws.onclose = () => {
-          this.isConnected = false;
-          console.log('WebSocket disconnected');
-          // Attempt reconnection after 3 seconds
-          setTimeout(() => this.connect(userId), 3000);
-        };
-      } catch (error) {
-        reject(error);
+      if (this.socket && this.isConnected) {
+        resolve();
+        return;
       }
+
+      this.socket = io(this.baseUrl, {
+        auth: { token },
+        transports: ['websocket'],
+        reconnection: true,
+      });
+
+      this.socket.on('connect', () => {
+        this.isConnected = true;
+        console.log('Socket.IO connected');
+        resolve();
+      });
+
+      this.socket.on('connect_error', (error) => {
+        console.error('Socket.IO connection error:', error);
+        reject(error);
+      });
+
+      this.socket.on('alert_update', (data) => {
+        this.notify({ type: 'alert', payload: data });
+      });
+
+      this.socket.on('camera_update', (data) => {
+        this.notify({ type: 'camera', payload: data });
+      });
+
+      this.socket.on('disconnect', () => {
+        this.isConnected = false;
+        console.log('Socket.IO disconnected');
+      });
     });
   }
 
@@ -54,17 +63,13 @@ class NotificationService {
     this.listeners.forEach(callback => callback(data));
   }
 
-  send(message) {
-    if (this.isConnected && this.ws) {
-      this.ws.send(JSON.stringify(message));
-    }
-  }
-
   disconnect() {
-    if (this.ws) {
-      this.ws.close();
+    if (this.socket) {
+      this.socket.disconnect();
+      this.socket = null;
+      this.isConnected = false;
     }
   }
 }
 
-export default NotificationService;
+export default new NotificationService();

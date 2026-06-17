@@ -3,6 +3,7 @@ import axios from 'axios';
 
 // const socket = io('http://localhost:8080');
 const API_BASE_URL = 'http://localhost:8080';
+const SOCKET_BASE_URL = 'http://localhost:8080';
 
 
 const api = axios.create({
@@ -33,20 +34,6 @@ api.interceptors.response.use(
   }
 );
 
-// // Add token to request headers for Socket.IO connections
-// socket.on('connect', () => {
-//   const token = localStorage.getItem('token');
-//   if (token) {
-//     socket.emit('authenticate', { token });
-//   }
-// });
-
-// // Handle token expiration - do NOT redirect, let app handle it
-// socket.on('unauthorized', (msg) => {
-//   if (msg.data === 'Token expired') {
-//     window.dispatchEvent(new Event('token-expired'));
-//   }
-// });
 
 export const userAPI = {
   register: (data) => api.post('/register', data),
@@ -55,13 +42,17 @@ export const userAPI = {
   getAlerts: () => api.get('/get-alerts'),
   getAlertById: (alertId) => api.get(`/alert/${alertId}`), 
   generateOTP: (userId) => api.get(`/generate-otp/${userId}`),
-  verifyOTP: (userId, otp) => api.post(`/verify-otp/${userId}?otp=${otp}`),
+  verifyOTP: (userId, otp) => api.post(`/verify-otp/${userId}`, { otp: otp }),
   respondToAlert: (alertId, response) => 
-    api.post(`/update-alert-response/${alertId}`, { response }),
-  getProfile: () => api.get('/user-profile'),
+    api.post(`/update-alert-response/${alertId}`, { response : response }),
   updateProfile: (data) => api.put('/update-profile', data),
-  toggleDetection: (status) => api.post('/toggle-detection', { status: status}),
-  getDetectionStatus: () => api.get('/detection-status'),
+  addCamera: (data) => api.post('/add-camera', data),
+  getCameras: () => api.get('/get-cameras'),
+  getProfile: () => api.get('/profile'),
+  editCameraDetails: (data) => api.post('/edit-camera-details', data),
+  deleteCamera: (cameraId) => api.delete(`/delete-camera/${cameraId}`),
+  toggleDetection: (cameraId, status) => api.post('/toggle-detection', { camera_id: cameraId, status: status }),
+  getDetectionStatus: (cameraId) => cameraId ? api.get(`/detection-status?camera_id=${cameraId}`) : api.get('/detection-status'),
 };
 
 export default api;

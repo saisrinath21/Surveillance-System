@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import LoginPage from './pages/LoginPage';
-import RegisterPage from './pages/RegisterPage';
 import Dashboard from './pages/Dashboard';
 import Notifications from './components/Notifications';
 import { policeAPI } from './services/api';
@@ -39,12 +38,10 @@ export default function App() {
   }, []);
 
   const handleLoginSuccess = (policeData) => {
-    setPolice(policeData);
+    setPolice({ id: policeData.id, code: policeData.code });
+    localStorage.setItem('policeId', policeData.id);
+    localStorage.setItem('policeCode', policeData.code);
     setCurrentPage('dashboard');
-  };
-
-  const handleRegisterSuccess = () => {
-    setCurrentPage('login');
   };
 
   const handleLogout = async () => {
@@ -103,32 +100,12 @@ export default function App() {
       ) : currentPage === 'login' ? (
         <>
           <PoliceLoginPage onLoginSuccess={handleLoginSuccess} />
-          <div className="text-center py-4">
-            <button
-              onClick={() => setCurrentPage('register')}
-              className="text-red-500 hover:underline"
-            >
-              New officer? Register
-            </button>
-          </div>
         </>
-      ) : (
-        <>
-          <RegisterPage onRegisterSuccess={handleRegisterSuccess} />
-          <div className="text-center py-4">
-            <button
-              onClick={() => setCurrentPage('login')}
-              className="text-red-500 hover:underline"
-            >
-              Already registered? Login
-            </button>
-          </div>
-        </>
-      )}
+      ) : null}
     </>
   );
 }
 
 function PoliceLoginPage({ onLoginSuccess }) {
-  return <LoginPage onLoginSuccess={onLoginSuccess} />;
+  return <LoginPage onLoginSuccess={ onLoginSuccess } />;
 }

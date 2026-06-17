@@ -150,14 +150,14 @@ export default function AlertDetails({ alertId, userId, onBack }) {
             )}
             <div className="flex gap-4">
               <button
-                onClick={() => handleResponse('NOT OK')}
+                onClick={() => handleResponse('OK')}
                 disabled={responding}
                 className="flex-1 px-6 py-3 bg-green-500 text-white font-semibold rounded-lg hover:bg-green-600 disabled:bg-gray-400"
               >
                 {responding ? 'Submitting...' : '✗ False Alarm'}
               </button>
               <button
-                onClick={() => handleResponse('OK')}
+                onClick={() => handleResponse('NOT OK')}
                 disabled={responding}
                 className="flex-1 px-6 py-3 bg-red-500 text-white font-semibold rounded-lg hover:bg-red-600 disabled:bg-gray-400"
               >

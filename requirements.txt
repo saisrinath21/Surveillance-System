@@ -5,4 +5,7 @@ requests
 streamlit
 geopy
 boto3
-opencv-pythonPyJWT
+opencv-python
+PyJWT
+redis
+sqlalchemy

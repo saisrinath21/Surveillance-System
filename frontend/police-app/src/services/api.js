@@ -31,16 +31,14 @@ api.interceptors.response.use(
 );
 
 export const policeAPI = {
-  register: (data) => api.post('/police-register', data),
   login: (data) => api.post('/police-login', data),
   logout: () => api.post('/logout'),
-  getAlerts: () => api.get('/police-alerts'),
-  getAlertStats: () => api.get('/alert-stats'),
-  respondToAlert: (alertId, response) => 
-    api.post(`/police-response/${alertId}`, { response }),
-  getResponseMetrics: () => api.get('/response-metrics'),
-  callUser: (alertId) => api.post(`/call-user/${alertId}`),
-  getSuspiciousZones: () => api.get('/suspicious-zones'),
+  getAlerts: () => api.get('/get-police-alerts'),
+  getAlertStats: () => api.get('/police-alert-stats'),
+  getResponseMetrics: () => api.get('/police-response-metrics'),
+  resolveAlert: (alertId, status) => api.post(`/police-update-alert/${alertId}`, { status }),
+  callUser: (alertId) => api.post(`/police-call-user/${alertId}`),
+  getAlertById: (alertId) => api.get(`/alert/${alertId}`),
 };
 
 export default api;

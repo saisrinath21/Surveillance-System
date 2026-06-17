@@ -3,6 +3,7 @@ import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import Dashboard from './pages/Dashboard';
 import AlertDetails from './pages/AlertDetails';
+import AddCamera from './pages/AddCamera';
 import Notifications from './components/Notifications';
 import OTPVerification from './pages/OTPVerification';
 import EditProfile from './pages/EditProfile';
@@ -44,6 +45,8 @@ export default function App() {
 
   const handleLoginSuccess = (userData) => {
     setUser(userData);
+    localStorage.setItem('username', userData.username);
+    localStorage.setItem('userId', userData.id);
     setCurrentPage('dashboard');
   };
 
@@ -63,6 +66,12 @@ export default function App() {
       localStorage.removeItem('username');
       setUser(null);
       setCurrentPage('login');
+    }
+  };
+
+  const handleProfileUpdate = (updatedUsername) => {
+    if (updatedUsername) {
+      setUser(prev => prev ? { ...prev, username: updatedUsername } : prev);
     }
   };
 
@@ -120,17 +129,23 @@ export default function App() {
           {/* Main Content */}
           {currentPage === 'dashboard' ? (
             <Dashboard 
-              userId={user.id} 
-              username={user.username}
+              user={user}
               onViewAlertDetails={handleViewAlertDetails}
-              onEditProfile={() => setCurrentPage('otp-verification')}
+              onAddCamera={() => setCurrentPage('add-camera')}
+            />
+          ) : currentPage === 'add-camera' ? (
+            <AddCamera 
+              userId={user.id}
+              onBack={() => setCurrentPage('dashboard')}
+              onCameraAdded={() => setCurrentPage('dashboard')}
             />
           ) : currentPage === 'alert-details' ? (
             <AlertDetails 
               alertId={selectedAlertId}
               userId={user.id}
               onBack={handleBackToDashboard}
-            />) : currentPage === 'otp-verification' ? (
+            />
+          ) : currentPage === 'otp-verification' ? (
             <OTPVerification 
               userId={user.id}
               onSuccess={() => setCurrentPage('edit-profile')}
@@ -140,8 +155,9 @@ export default function App() {
             <EditProfile 
               userId={user.id}
               onSuccess={() => setCurrentPage('dashboard')}
+              onProfileUpdate={handleProfileUpdate}
             />
-           ) : null}
+          ) : null}
         </> 
       ) : currentPage === 'login' ? (
         <LoginPage 

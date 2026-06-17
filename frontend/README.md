@@ -1,8 +1,9 @@
 # React Frontend Setup
 
-Two separate React applications for the Surveillance System:
+Three separate React applications for the Surveillance System:
 - **user-app**: User monitoring interface (runs on port 3000)
 - **police-app**: Police alert management interface (runs on port 3001)
+- **admin-app**: Admin panel to register police stations and push alerts (runs on port 3002)
 
 ## Features
 

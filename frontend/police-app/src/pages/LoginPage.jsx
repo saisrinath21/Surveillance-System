@@ -14,12 +14,16 @@ export default function PoliceLoginPage({ onLoginSuccess }) {
 
     try {
       const response = await policeAPI.login({ code, password });
-      
+      const policeData = {
+        id: response.data.id,
+        code: response.data.police_code || code
+      };
+
       // Store JWT token
       localStorage.setItem('token', response.data.token);
-      localStorage.setItem('policeCode', code);
-      localStorage.setItem('policeId', response.data.id);
-      onLoginSuccess(response.data);
+      localStorage.setItem('policeCode', policeData.code);
+      localStorage.setItem('policeId', policeData.id);
+      onLoginSuccess(policeData);
     } catch (err) {
       setError(err.response?.data?.error || 'Login failed');
     } finally {
@@ -73,9 +77,6 @@ export default function PoliceLoginPage({ onLoginSuccess }) {
           </button>
         </form>
 
-        <div className="mt-4 text-center text-gray-600">
-          <p>New police officer? <a href="/register" className="text-red-500 hover:underline">Register here</a></p>
-        </div>
       </div>
     </div>
   );

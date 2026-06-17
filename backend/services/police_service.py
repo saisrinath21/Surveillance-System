@@ -1,70 +1,59 @@
-from geopy.distance import geodesic
-from geopy.geocoders import Nominatim
-
+from sqlalchemy import func
 from extensions.extensions import db
 from models.police_model import Police
+from utils.district_utils import geolocate_district, geodesic
 
-geolocator = Nominatim(user_agent="geoapi")
 
-
-def search_police_station(
-    district,
-    user_coord
-):
-
-    stations = db.session.execute(
-        db.select(Police).where(
-            Police.district == district
-        )
-    ).scalars().all()
-
-    if not stations:
-
-        print("[!] No police stations found")
-
+def search_police_station(user_coords):
+    try:
+        user_lat = float(user_coords['latitude'])
+        user_lon = float(user_coords['longitude'])
+    except (TypeError, ValueError) as e:
+        print(f"Invalid user coordinates: {user_coords} | {e}")
         return None
 
-    user_coords = (
-        user_coord.latitude,
-        user_coord.longitude
-    )
+    district = geolocate_district(user_lat, user_lon)
+    normalized_district = district.strip().lower() if isinstance(district, str) else district
+    print(f"search_police_station: user=({user_lat},{user_lon}), district='{district}'")
+
+    stations = []
+    if isinstance(normalized_district, str) and normalized_district and normalized_district != 'unknown':
+        stations = db.session.execute(
+            db.select(Police).where(
+                func.lower(Police.district) == normalized_district
+            )
+        ).scalars().all()
+
+    if not stations:
+        print(f"[!] No police stations found in district '{district}' or district lookup unavailable; using all stations")
+        stations = db.session.execute(db.select(Police)).scalars().all()
+        if not stations:
+            print("[!] No police stations found in the database")
+            return None
 
     station_distances = []
-
+    user_coord = (user_lat, user_lon)
     for station in stations:
-
         try:
-
-            station_location = geolocator.geocode(
-                station.address
+            station_coords = (
+                float(station.latitude),
+                float(station.longitude)
             )
 
-            if station_location:
-                # camera_url = station.camera_url
-                
-                station_coords = (
-                    station_location.latitude,
-                    station_location.longitude
-                )
+            # `geodesic` helper returns a kilometer value (float), not a Distance
+            # object in `utils/district_utils.py`. Use the returned value directly
+            # but guard in case the helper is changed to return a Distance object.
+            raw_distance = geodesic(user_coord, station_coords)
+            distance = float(raw_distance.kilometers) if hasattr(raw_distance, 'kilometers') else float(raw_distance)
 
-                distance = geodesic(
-                    user_coords,
-                    station_coords
-                ).kilometers
+            station_address = f"{station.latitude},{station.longitude}"
+            station_distances.append((distance, station.id, station.phone, station_address))
 
-                station_distances.append(
-                    (
-                        distance,
-                        station.phone,
-                        station.address
-                    )
-                )
-
-                print(
-                    f"Police Station: "
-                    f"{station.address} | "
-                    f"Distance: {distance:.2f}km"
-                )
+            print(
+                f"Police Station: "
+                f"{station_address} | "
+                f"Distance: {distance:.2f}km"
+            )
 
         except Exception as e:
 
@@ -85,13 +74,17 @@ def search_police_station(
         key=lambda x: x[0]
     )
 
-    nearest_distance, nearest_phone, nearest_address = \
+    nearest_distance, nearest_id, nearest_phone, nearest_address = \
         station_distances[0]
-
+        
     print(
         f"[✓] Nearest station: "
         f"{nearest_address} "
         f"({nearest_distance:.2f}km)"
     )
 
-    return nearest_phone
+    return {
+        'station_id': nearest_id,
+        'phone': nearest_phone,
+        'distance_km': nearest_distance
+    }

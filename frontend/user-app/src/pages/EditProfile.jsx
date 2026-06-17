@@ -1,14 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { userAPI } from '../services/api';
 
-export default function EditProfile({ userId, onSuccess }) {
+export default function EditProfile({ userId, onSuccess, onProfileUpdate }) {
   const [formData, setFormData] = useState({
-    rtsp_url: '',
+    username: '',
     password: '',
     confirmPassword: '',
     phone: '',
-    address: '',
-    district: '',
   });
   const [originalData, setOriginalData] = useState({});
   const [loading, setLoading] = useState(true);
@@ -25,21 +23,17 @@ export default function EditProfile({ userId, onSuccess }) {
     try {
       setLoading(true);
       const response = await userAPI.getProfile();
-      const profile = response.data.profile;
+      const profile = response.data;
       const profileData = {
-        rtsp_url: profile.rtsp_url || '',
+        username: profile.username || '',
         password: '',
         confirmPassword: '',
         phone: profile.phone || '',
-        address: profile.address || '',
-        district: profile.district || '',
       };
       setFormData(profileData);
       setOriginalData({
-        rtsp_url: profile.rtsp_url || '',
+        username: profile.username || '',
         phone: profile.phone || '',
-        address: profile.address || '',
-        district: profile.district || '',
       });
     } catch (err) {
       console.error('Failed to load profile:', err);
@@ -68,10 +62,9 @@ export default function EditProfile({ userId, onSuccess }) {
 
     // Build update payload with only changed fields
     const updates = {};
-    if (formData.rtsp_url !== originalData.rtsp_url) updates.rtsp_url = formData.rtsp_url;
+    if (formData.username !== originalData.username) updates.username = formData.username;
     if (formData.phone !== originalData.phone) updates.phone = formData.phone;
-    if (formData.address !== originalData.address) updates.address = formData.address;
-    if (formData.district !== originalData.district) updates.district = formData.district;
+    
     if (formData.password) updates.password = formData.password;
 
     if (Object.keys(updates).length === 0) {
@@ -81,9 +74,16 @@ export default function EditProfile({ userId, onSuccess }) {
 
     try {
       setSaving(true);
-      await userAPI.updateProfile(updates);
+      const response = await userAPI.updateProfile(updates);
       setSuccess('Profile updated successfully!');
-      // Update original data to reflect new state
+
+      if (response?.data?.token) {
+        localStorage.setItem('token', response.data.token);
+      }
+      if (updates.username) {
+        localStorage.setItem('username', updates.username);
+        onProfileUpdate(updates.username);
+      }
       setOriginalData(prev => ({
         ...prev,
         ...updates,
@@ -162,20 +162,20 @@ export default function EditProfile({ userId, onSuccess }) {
               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-blue-600" viewBox="0 0 20 20" fill="currentColor">
                 <path d="M2 6a2 2 0 012-2h6a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6zm12.553 1.106A1 1 0 0014 8v4a1 1 0 00.553.894l2 1A1 1 0 0018 13V7a1 1 0 00-1.447-.894l-2 1z" />
               </svg>
-              <h2 className="text-lg font-semibold text-gray-800">Camera Settings</h2>
+              <h2 className="text-lg font-semibold text-gray-800">User Information</h2>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-600 mb-1">RTSP URL</label>
+              <label className="block text-sm font-medium text-gray-600 mb-1">User Name</label>
               <input
-                id="rtsp-url-input"
+                id="username-input"
                 type="text"
-                name="rtsp_url"
-                value={formData.rtsp_url}
+                name="username"
+                value={formData.username}
                 onChange={handleChange}
-                placeholder="rtsp://username:password@ip:port/stream"
+                placeholder="XYZ123"
                 className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-500 transition-all bg-gray-50 focus:bg-white text-sm"
               />
-              <p className="text-xs text-gray-400 mt-1">Enter the RTSP stream URL for your surveillance camera</p>
+              <p className="text-xs text-gray-400 mt-1">Enter if u want to change your username</p>
             </div>
           </div>
 
@@ -243,13 +243,13 @@ export default function EditProfile({ userId, onSuccess }) {
             </div>
           </div>
 
-          {/* Contact & Location Section */}
+          {/* Contact*/}
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-6">
             <div className="flex items-center gap-2 mb-4">
               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-green-500" viewBox="0 0 20 20" fill="currentColor">
                 <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
               </svg>
-              <h2 className="text-lg font-semibold text-gray-800">Contact & Location</h2>
+              <h2 className="text-lg font-semibold text-gray-800">Contact</h2>
             </div>
             <div className="space-y-4">
               <div>
@@ -261,30 +261,6 @@ export default function EditProfile({ userId, onSuccess }) {
                   value={formData.phone}
                   onChange={handleChange}
                   placeholder="10-digit phone number"
-                  className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-500 transition-all bg-gray-50 focus:bg-white text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-600 mb-1">Address</label>
-                <input
-                  id="address-input"
-                  type="text"
-                  name="address"
-                  value={formData.address}
-                  onChange={handleChange}
-                  placeholder="Your full address"
-                  className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-500 transition-all bg-gray-50 focus:bg-white text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-600 mb-1">District</label>
-                <input
-                  id="district-input"
-                  type="text"
-                  name="district"
-                  value={formData.district}
-                  onChange={handleChange}
-                  placeholder="Your district"
                   className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-500 transition-all bg-gray-50 focus:bg-white text-sm"
                 />
               </div>

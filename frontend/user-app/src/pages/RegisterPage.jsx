@@ -6,9 +6,7 @@ export default function RegisterPage({ onRegisterSuccess, onLoginClick }) {
     username: '',
     password: '',
     confirmPassword: '',
-    address: '',
-    district: '',
-    phone: ''
+    phone: '',
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -90,33 +88,10 @@ export default function RegisterPage({ onRegisterSuccess, onLoginClick }) {
               required
             />
           </div>
-
           <div className="mb-4">
-            <label className="block text-gray-700 font-semibold mb-2">Address</label>
+            <label className="block text-gray-700 font-semibold mb-2">Phone Number</label>
             <input
               type="text"
-              name="address"
-              value={formData.address}
-              onChange={handleChange}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              required
-            />
-          </div>
-          <div className="mb-4">
-            <label className="block text-gray-700 font-semibold mb-2">District</label>
-            <input
-              type="text"
-              name="district"
-              value={formData.district}
-              onChange={handleChange}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              required
-            />
-          </div>
-          <div className="mb-6">
-            <label className="block text-gray-700 font-semibold mb-2">Phone</label>
-            <input
-              type="tel"
               name="phone"
               value={formData.phone}
               onChange={handleChange}
@@ -124,7 +99,6 @@ export default function RegisterPage({ onRegisterSuccess, onLoginClick }) {
               required
             />
           </div>
-
           <button
             type="submit"
             disabled={loading}

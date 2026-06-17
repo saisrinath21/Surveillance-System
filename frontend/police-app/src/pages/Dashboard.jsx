@@ -1,22 +1,74 @@
 import React, { useState, useEffect } from 'react';
 import {
-  LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
+  LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell
 } from 'recharts';
 import { policeAPI } from '../services/api';
+import notificationService from '../services/NotificationService';
 
 export default function PoliceDashboard({ policeId, policeCode }) {
   const [alerts, setAlerts] = useState([]);
-  const [stats, setStats] = useState(null);
-  const [metrics, setMetrics] = useState(null);
+  const [stats, setStats] = useState({ total_count: 0, pending_count: 0, responded_count: 0, resolved_count: 0 });
+  const [metrics, setMetrics] = useState({ response_rate: 0, avg_response_time: 0 });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    loadData();
-    // Refresh every 30 seconds
-    const interval = setInterval(loadData, 30000);
-    return () => clearInterval(interval);
+    if (localStorage.getItem('token')) {
+      loadData();
+      notificationService.connect().catch(err => console.error('Socket connect failed', err));
+      const unsubscribe = notificationService.subscribe(handleSocketEvent);
+      return () => {
+        unsubscribe();
+        notificationService.disconnect();
+      };
+    }
   }, []);
+
+  const handleSocketEvent = (event) => {
+    const payload = event.payload || event;
+    console.log('Police dashboard socket event:', payload);
+    if (!payload || !payload.alert_id) {
+      return;
+    }
+
+    setAlerts(prevAlerts => {
+      const existingIndex = prevAlerts.findIndex(item => item.alert_id === payload.alert_id);
+      // If alert exists, update it and adjust stats if status changed
+      if (existingIndex >= 0) {
+        const oldStatus = prevAlerts[existingIndex].status;
+        const newAlerts = prevAlerts.map(item => item.alert_id === payload.alert_id ? { ...item, ...payload } : item);
+        if (oldStatus !== payload.status) {
+          setStats(prev => {
+            const s = { ...prev };
+            // decrement old bucket
+            if (oldStatus === 'pending') s.pending_count = Math.max(0, (s.pending_count || 0) - 1);
+            else if (oldStatus === 'responded' || oldStatus === 'dispatched') s.responded_count = Math.max(0, (s.responded_count || 0) - 1);
+            else if (oldStatus === 'resolved') s.resolved_count = Math.max(0, (s.resolved_count || 0) - 1);
+
+            // increment new bucket
+            if (payload.status === 'pending' || payload.status === 'escalated') s.pending_count = (s.pending_count || 0) + 1;
+            else if (payload.status === 'responded' || payload.status === 'dispatched') s.responded_count = (s.responded_count || 0) + 1;
+            else if (payload.status === 'resolved') s.resolved_count = (s.resolved_count || 0) + 1;
+
+            return s;
+          });
+        }
+        return newAlerts;
+      }
+
+      // New alert: prepend and increment totals
+      setStats(prev => {
+        const s = { ...prev };
+        s.total_count = (s.total_count || 0) + 1;
+        if (payload.status === 'pending' || payload.status === 'escalated') s.pending_count = (s.pending_count || 0) + 1;
+        else if (payload.status === 'responded' || payload.status === 'dispatched') s.responded_count = (s.responded_count || 0) + 1;
+        else if (payload.status === 'resolved') s.resolved_count = (s.resolved_count || 0) + 1;
+        return s;
+      });
+
+      return [payload, ...prevAlerts];
+    });
+  };
 
   const loadData = async () => {
     try {
@@ -25,9 +77,9 @@ export default function PoliceDashboard({ policeId, policeCode }) {
         policeAPI.getAlertStats(),
         policeAPI.getResponseMetrics()
       ]);
-      setAlerts(alertsRes.data);
-      setStats(statsRes.data);
-      setMetrics(metricsRes.data);
+      setAlerts(alertsRes.data.alerts || []);
+      setStats(statsRes.data || {});
+      setMetrics(metricsRes.data || {});
     } catch (err) {
       console.error('Failed to load data:', err);
     } finally {
@@ -35,12 +87,12 @@ export default function PoliceDashboard({ policeId, policeCode }) {
     }
   };
 
-  const handleRespond = async (alertId, response) => {
+  const handleRespond = async (alertId, status) => {
     try {
-      await policeAPI.respondToAlert(alertId, response);
+      await policeAPI.resolveAlert(alertId, status);
       loadData();
     } catch (err) {
-      console.error('Failed to respond:', err);
+      console.error('Failed to update alert status:', err);
     }
   };
 
@@ -70,6 +122,17 @@ export default function PoliceDashboard({ policeId, policeCode }) {
   ];
 
   const COLORS = ['#DC2626', '#2563EB', '#059669'];
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-100">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-500 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading police dashboard...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-100 p-6">
@@ -103,53 +166,7 @@ export default function PoliceDashboard({ policeId, policeCode }) {
         </div>
       </div>
 
-      {/* Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        {/* Alert Status */}
-        <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-xl font-bold mb-4">Alert Status</h2>
-          <ResponsiveContainer width="100%" height={300}>
-            <PieChart>
-              <Pie
-                data={statusData}
-                cx="50%"
-                cy="50%"
-                labelLine={false}
-                label={({ name, value }) => `${name}: ${value}`}
-                outerRadius={100}
-                fill="#8884d8"
-                dataKey="value"
-              >
-                {COLORS.map((color, index) => (
-                  <Cell key={`cell-${index}`} fill={color} />
-                ))}
-              </Pie>
-              <Tooltip />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
-
-        {/* Response Time Trends */}
-        <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-xl font-bold mb-4">Response Time Trends</h2>
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={responseTimeData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="name" />
-              <YAxis />
-              <Tooltip />
-              <Legend />
-              <Line
-                type="monotone"
-                dataKey="avgTime"
-                stroke="#2563EB"
-                strokeWidth={2}
-                name="Avg Response Time (mins)"
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
+      
 
       {/* Alerts Table */}
       <div className="bg-white rounded-lg shadow overflow-hidden">
@@ -168,36 +185,53 @@ export default function PoliceDashboard({ policeId, policeCode }) {
               </tr>
             </thead>
             <tbody>
-              {alerts.slice(0, 10).map(alert => (
-                <tr key={alert.id} className="border-t hover:bg-gray-50">
-                  <td className="px-6 py-4 text-sm font-medium">#{alert.id}</td>
-                  <td className="px-6 py-4 text-sm">{alert.user_name}</td>
-                  <td className="px-6 py-4 text-sm">{alert.timestamp}</td>
-                  <td className="px-6 py-4 text-sm">
-                    <span className={`px-2 py-1 rounded text-xs font-semibold ${
-                      alert.status === 'pending' ? 'bg-red-100 text-red-800' :
-                      alert.status === 'responded' ? 'bg-blue-100 text-blue-800' :
-                      'bg-green-100 text-green-800'
-                    }`}>
-                      {alert.status}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-sm space-x-2">
-                    <button
-                      onClick={() => handleCallUser(alert.id)}
-                      className="text-blue-500 hover:underline"
-                    >
-                      Call
-                    </button>
-                    <button
-                      onClick={() => handleRespond(alert.id, 'dispatched')}
-                      className="text-green-500 hover:underline"
-                    >
-                      Dispatch
-                    </button>
+              {alerts.length === 0 ? (
+                <tr>
+                  <td colSpan="5" className="px-6 py-8 text-center text-gray-500">
+                    No alerts assigned to your station yet.
                   </td>
                 </tr>
-              ))}
+              ) : (
+                alerts.slice(0, 10).map(alert => (
+                  <tr key={alert.alert_id} className="border-t hover:bg-gray-50">
+                    <td className="px-6 py-4 text-sm font-medium">#{alert.alert_id}</td>
+                    <td className="px-6 py-4 text-sm">{alert.user_name || alert.user_phone || 'Unknown'}</td>
+                    <td className="px-6 py-4 text-sm">{new Date(alert.timestamp).toLocaleString()}</td>
+                    <td className="px-6 py-4 text-sm">
+                      <span className={`px-2 py-1 rounded text-xs font-semibold ${
+                        alert.status === 'pending' ? 'bg-red-100 text-red-800' :
+                        alert.status === 'responded' ? 'bg-blue-100 text-blue-800' :
+                        alert.status === 'resolved' ? 'bg-green-100 text-green-800' :
+                        'bg-yellow-100 text-yellow-800'
+                      }`}>
+                        {alert.status}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-sm space-x-2">
+                      <button
+                        onClick={() => handleCallUser(alert.alert_id)}
+                        className="text-blue-500 hover:underline"
+                      >
+                        Call
+                      </button>
+                      <button
+                        onClick={() => handleRespond(alert.alert_id, 'responded')}
+                        className="text-green-500 hover:underline"
+                      >
+                        Dispatch
+                      </button>
+                      {alert.status !== 'resolved' && (
+                        <button
+                          onClick={() => handleRespond(alert.alert_id, 'resolved')}
+                          className="text-emerald-500 hover:underline"
+                        >
+                          Resolve
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

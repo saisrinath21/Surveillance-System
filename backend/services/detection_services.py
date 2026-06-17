@@ -1,14 +1,14 @@
 import cv2
 import threading
+from models.camera_model import Camera
 from models.user_model import User 
 from services.twilio_services import alert_user_via_call
 from ultralytics import YOLO
 from dotenv import load_dotenv
-from extensions.extensions import db
+from extensions.extensions import db, socketio
 from flask import current_app
+from extensions.redis_client import redis_client
 
-load_dotenv()
-model_running = False
 thread = None
 
 # Initialize the YOLO model (use standard pretrained weights)
@@ -18,42 +18,77 @@ def detect_and_alert(frame):
     results = model.predict(frame, classes=[0])
     return results
 
-def detection_loop(user_id, app):
-    global model_running
+def detection_loop(camera_id, app):
+    redis_key = f"detection:{camera_id}"
 
     with app.app_context():
-        user = db.session.execute(db.select(User).where(User.id == user_id)).scalars().first()
-        # if(user.camera_url is None):
-        #     cap = cv2.VideoCapture(0)  # Use default webcam if no camera URL is provided
-        # else:
-        cap = cv2.VideoCapture(0)  # Assuming user has a camera_url field in the database
+        camera = db.session.execute(db.select(Camera).where(Camera.camera_id == camera_id)).scalars().first()
+        if not camera:
+            return
+
+        cap = cv2.VideoCapture(camera.camera_url)
 
         try:
-            while model_running:
+            while True:
+                status = redis_client.get(redis_key)
+                
+                # Check if status exists and is "running"
+                if status != "running":
+                    print(f"Stopping loop. Status: {status}")
+                    break
+
                 ret, frame = cap.read()
                 if not ret:
                     break
+
                 detected = detect_and_alert(frame)
+                
                 if len(detected[0].boxes) > 0:
-                    print("Fetching user WhatsApp number from database...")
-                    user_whatsapp_number = user.phone if user else None
-                    if user_whatsapp_number:
-                        model_running = False
+                    print("Intruder detected!")
+                    if camera.phone:
+                        # Set to stopped immediately
+                        redis_client.setex(redis_key, 3600, "stopped")
+                        
+                        # Update DB
+                        camera.model_active = False
+                        db.session.commit()
+                        socketio.emit(
+                            'camera_update',
+                            {
+                                'camera_id': camera_id,
+                                'model_active': False
+                            },
+                            room=f"user_id: {camera.user_id}"
+                        )
+                        
                         alert_user_via_call(
                             frame,
-                            user_whatsapp_number,
-                            user_id,
-                            # user.camera_url
+                            camera.phone,
+                            camera_id,
+                            camera.user_id,
                         )
         finally:
             cap.release()
-def start_detection(user_id):
-    global model_running, thread
-    model_running = True
-    app = current_app._get_current_object()  # Ensure we have the app context
-    thread = threading.Thread(target=detection_loop, args=(user_id, app))  # Initialize with a dummy thread
+
+def start_detection(camera_id):
+    global thread
+    redis_client.setex(
+        f"detection:{camera_id}",
+        3600,
+        "running"
+    )
+    app = current_app._get_current_object()
+    thread = threading.Thread(target=detection_loop, args=(camera_id, app))  # Initialize with a dummy thread
     thread.start()
 
-def stop_detection():
-    global model_running
-    model_running = False
+def stop_detection(camera_id):
+    global thread
+    redis_client.setex(
+        f"detection:{camera_id}",
+        3600,
+        "stopped"
+    )
+    camera = db.session.execute(db.select(Camera).where(Camera.camera_id == camera_id)).scalars().first()
+    if camera:
+        camera.model_active = False
+        db.session.commit()

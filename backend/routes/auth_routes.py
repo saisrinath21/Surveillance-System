@@ -1,4 +1,5 @@
 from flask import current_app, request, jsonify
+from flask.cli import load_dotenv
 from models.user_model import User
 from models.police_model import Police
 from extensions.extensions import db
@@ -8,17 +9,23 @@ import jwt
 import uuid
 from datetime import datetime, timedelta
 from sqlalchemy.exc import IntegrityError
+from utils.district_utils import geolocate_district, geolocator
+from dotenv import load_dotenv
+import os
+load_dotenv()
+
 
 auth_bp = Blueprint(
     'auth_bp',
     __name__
 )
 
+ADMIN = os.getenv('ADMIN')
+
 @auth_bp.route('/register', methods=['POST'])
 def register():
-    data = request.json()
-    # data = request.get_json()
-    required_fields = ['username', 'password', 'address', 'district', 'phone']
+    data = request.get_json()
+    required_fields = ['username', 'password', 'phone']
     missing_fields = [field for field in required_fields if not data.get(field)]
     if missing_fields:
         return jsonify({'error': f'Missing fields: {", ".join(missing_fields)}'}), 400
@@ -29,8 +36,6 @@ def register():
             id = user_id,
             username = data['username'],
             password = data['password'],
-            address = data['address'],
-            district = data['district'],
             phone = data['phone']
         )
         db.session.add(new_user)
@@ -55,7 +60,7 @@ def login():
             'user_id': user.id,
             'username': user.username,
             'user_type': 'user',
-            'exp': datetime.utcnow() + timedelta(days=30)
+            'exp': datetime.utcnow() + timedelta(hours=2)
         }, current_app.config['SECRET_KEY'], algorithm='HS256')
         
         return jsonify({
@@ -69,22 +74,44 @@ def login():
 
 @auth_bp.route('/police-register', methods=['POST'])
 def police_register():
-    data = request.json
+    data = request.get_json() or {}
+    required_fields = ['token', 'code', 'password', 'phone', 'latitude', 'longitude']
+    missing_fields = [field for field in required_fields if not data.get(field)]
+    if missing_fields:
+        return jsonify({'error': f"Missing fields: {', '.join(missing_fields)}"}), 400
+
+    if not ADMIN:
+        return jsonify({'error': 'Admin token is not configured on the server'}), 500
+
+    if data.get('token') != ADMIN:
+        return jsonify({'error': 'Invalid admin token'}), 401
+
     try:
         police_id = str(uuid.uuid4())[:30]
+        latitude = data['latitude']
+        longitude = data['longitude']
+
+        if not latitude or not longitude:
+            return jsonify({'error': 'Latitude and longitude are required'}), 400
+        district = geolocate_district(latitude, longitude)
+
         new_police = Police(
-            id = police_id,
-            code = data['code'],
-            password = data['password'],
-            address = data['address'],
-            district = data.get('district', ''),
-            phone = data['phone']
+            id=police_id,
+            code=data['code'],
+            password=data['password'],
+            latitude=latitude,
+            longitude=longitude,
+            district=district,
+            phone=data['phone'],
         )
         db.session.add(new_police)
         db.session.commit()
         return jsonify({'message': 'Police Registered'}), 201
     except IntegrityError:
+        db.session.rollback()
         return jsonify({'error': 'Police code/phone already exists'}), 409
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @auth_bp.route('/police-login', methods=['POST'])
 def police_login():
@@ -100,7 +127,7 @@ def police_login():
             'user_id': user.id,
             'police_code': user.code,
             'user_type': 'police',
-            'exp': datetime.utcnow() + timedelta(days=30),
+            'exp': datetime.utcnow() + timedelta(hours=2),
         }, current_app.config['SECRET_KEY'], algorithm='HS256')
         
         return jsonify({

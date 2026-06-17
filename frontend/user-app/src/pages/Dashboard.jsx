@@ -1,38 +1,64 @@
 import React, { useState, useEffect } from 'react';
 import {
-  LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
-  Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell
+  Tooltip, ResponsiveContainer, PieChart, Pie, Cell
 } from 'recharts';
 import {userAPI} from '../services/api';
+import notificationService from '../services/NotificationService';
 
-export default function Dashboard({ userId, username, onViewAlertDetails, onEditProfile }) {
+export default function Dashboard({ user, onViewAlertDetails, onAddCamera }) {
+  const [cameras, setCameras] = useState([]);
   const [alerts, setAlerts] = useState([]);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [detectionActive, setDetectionActive] = useState(false);
+  const [cameraLoading, setCameraLoading] = useState(true);
+  const [selectedCameraId, setSelectedCameraId] = useState(null);
+  const username = user?.username || localStorage.getItem('username');
 
   useEffect(() => {
-    
-    loadAlerts();
-    fetchDetectionStatus();
-    setInterval(() => {
+    if (user?.id) {
+      loadCameras();
       loadAlerts();
-      fetchDetectionStatus();
-    }, 10000); // Refresh every 30 seconds
-  }, []);
+      notificationService.connect().catch(err => console.error('Socket connect failed', err));
+    }
 
-  const fetchDetectionStatus = async () => {
+    const unsubscribe = notificationService.subscribe((event) => {
+      if (event.type === 'alert') {
+        setAlerts(prevAlerts => {
+          const existingIndex = prevAlerts.findIndex(a => a.alert_id === event.payload.alert_id);
+          const updatedAlerts = existingIndex >= 0
+            ? prevAlerts.map(a => a.alert_id === event.payload.alert_id ? event.payload : a)
+            : [event.payload, ...prevAlerts];
+          calculateStats(updatedAlerts);
+          return updatedAlerts;
+        });
+      }
+
+      if (event.type === 'camera') {
+        setCameras(prevCameras => prevCameras.map(camera =>
+          camera.camera_id === event.payload.camera_id
+            ? { ...camera, ...event.payload }
+            : camera
+        ));
+      }
+    });
+
+    return () => unsubscribe();
+  }, [user]);
+
+  const loadCameras = async () => {
     try {
-      const response = await userAPI.getDetectionStatus();
-      setDetectionActive(response.data.model_running);
+      const response = await userAPI.getCameras();
+      setCameras(response.data.cameras || []);
     } catch (err) {
-      console.error('Failed to fetch detection status:', err);
+      console.error('Failed to load cameras:', err);
+    } finally {
+      setCameraLoading(false);
     }
   };
 
   const loadAlerts = async () => {
     try {
-      const response = await userAPI.getAlerts(); 
+      const response = await userAPI.getAlerts();
       const alertsArray = response.data.alerts || [];
       setAlerts(alertsArray);
       calculateStats(alertsArray);
@@ -53,11 +79,19 @@ export default function Dashboard({ userId, username, onViewAlertDetails, onEdit
     setStats(stats);
   };
 
-  const toggleDetection = async () => {
+  const handleCameraClick = (cameraId) => {
+    setSelectedCameraId(cameraId);
+    // Load alerts for this specific camera
+  };
+
+  const getCameraAlerts = (cameraId) => {
+    return alerts.filter(a => a.camera_id === cameraId);
+  };
+
+  const toggleDetection = async (cameraId, currentStatus) => {
     try {
-      const newStatus = !detectionActive;
-      await userAPI.toggleDetection(newStatus);
-      setDetectionActive(newStatus);
+      await userAPI.toggleDetection(cameraId, !currentStatus);
+      loadCameras();
     } catch (err) {
       console.error('Failed to toggle detection:', err);
     }
@@ -71,150 +105,268 @@ export default function Dashboard({ userId, username, onViewAlertDetails, onEdit
 
   const COLORS = ['#F59E0B', '#10B981', '#3B82F6'];
 
+  if (selectedCameraId) {
+    const selectedCamera = cameras.find(c => c.camera_id === selectedCameraId);
+    const cameraAlerts = getCameraAlerts(selectedCameraId);
+
+    return (
+      <div className="min-h-screen bg-gray-100 p-6">
+        {/* Back Button and Header */}
+        <div className="max-w-7xl mx-auto">
+          <button
+            onClick={() => setSelectedCameraId(null)}
+            className="mb-4 px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition-colors"
+          >
+            ← Back to Cameras
+          </button>
+
+          <div className="bg-white rounded-lg shadow p-6 mb-6">
+            <div className="flex justify-between items-center">
+              <div>
+                <h1 className="text-3xl font-bold">{selectedCamera?.camera_name}</h1>
+                <p className="text-gray-600 mt-2">Camera ID: {selectedCameraId}</p>
+              </div>
+              <button
+                onClick={() => toggleDetection(selectedCameraId, selectedCamera.model_active || false)}
+                className={`px-6 py-2 rounded-lg text-white font-semibold ${
+                  selectedCamera.model_active ? 'bg-green-500 hover:bg-green-600' : 'bg-red-500 hover:bg-red-600'
+                }`}
+              >
+                Detection: {selectedCamera.model_active ? 'ON' : 'OFF'}
+              </button>
+            </div>
+          </div>
+
+          {/* Camera Stats */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            <div className="bg-white rounded-lg shadow p-6">
+              <p className="text-gray-600 text-sm font-semibold">Total Alerts</p>
+              <p className="text-3xl font-bold text-blue-500 mt-2">{cameraAlerts.length}</p>
+            </div>
+            <div className="bg-white rounded-lg shadow p-6">
+              <p className="text-gray-600 text-sm font-semibold">Pending</p>
+              <p className="text-3xl font-bold text-yellow-500 mt-2">
+                {cameraAlerts.filter(a => a.status === 'pending').length}
+              </p>
+            </div>
+            <div className="bg-white rounded-lg shadow p-6">
+              <p className="text-gray-600 text-sm font-semibold">Resolved</p>
+              <p className="text-3xl font-bold text-green-500 mt-2">
+                {cameraAlerts.filter(a => a.status === 'resolved').length}
+              </p>
+            </div>
+            <div className="bg-white rounded-lg shadow p-6">
+              <p className="text-gray-600 text-sm font-semibold">Responded</p>
+              <p className="text-3xl font-bold text-blue-500 mt-2">
+                {cameraAlerts.filter(a => a.status === 'responded').length}
+              </p>
+            </div>
+          </div>
+
+          {/* Alerts Table */}
+          <div className="bg-white rounded-lg shadow overflow-hidden">
+            <div className="p-6 border-b">
+              <h2 className="text-xl font-bold">Camera Alerts</h2>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">ID</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">Time</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">Status</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">Response</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {cameraAlerts.length === 0 ? (
+                    <tr>
+                      <td colSpan="5" className="px-6 py-4 text-center text-gray-600">
+                        No alerts for this camera
+                      </td>
+                    </tr>
+                  ) : (
+                    cameraAlerts.map(alert => (
+                      <tr key={alert.alert_id} className="border-t hover:bg-gray-50">
+                        <td className="px-6 py-4 text-sm font-medium">#{alert.alert_id}</td>
+                        <td className="px-6 py-4 text-sm">{alert.timestamp}</td>
+                        <td className="px-6 py-4 text-sm">
+                          <span className={`px-2 py-1 rounded text-xs font-semibold ${
+                            alert.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                            alert.status === 'resolved' ? 'bg-green-100 text-green-800' :
+                            'bg-blue-100 text-blue-800'
+                          }`}>
+                            {alert.status}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-sm">{alert.user_response || '-'}</td>
+                        <td className="px-6 py-4 text-sm">
+                          <button 
+                            className="text-blue-500 hover:underline"
+                            onClick={() => onViewAlertDetails(alert.alert_id)}
+                          >
+                            View Details
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-100 p-6">
-      {/* Header */}
-      <div className="bg-white rounded-lg shadow p-6 mb-6">
-        <div className="flex justify-between items-center">
-          <div className="flex items-center gap-3">
-            <h1 className="text-3xl font-bold">Welcome, {username}!</h1>
+      <div className="max-w-7xl mx-auto">
+        {/* Header */}
+        <div className="bg-white rounded-lg shadow p-6 mb-6">
+          <div className="flex justify-between items-center">
+            <div>
+              <h1 className="text-3xl font-bold">Welcome, {username}!</h1>
+              <p className="text-gray-600 mt-2 hidden md:block">Monitor your surveillance system</p>
+            </div>
             <button
-              id="edit-profile-btn"
-              onClick={onEditProfile}
-              className="p-2 rounded-full hover:bg-blue-50 text-gray-400 hover:text-blue-600 transition-all duration-200 group relative"
-              title="Edit Profile"
+              onClick={onAddCamera}
+              className="px-6 py-2 rounded-lg text-white font-semibold bg-blue-500 hover:bg-blue-600 transition-colors"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
-              </svg>
-              <span className="absolute -bottom-8 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
-                Edit Profile
-              </span>
+              Add Camera
             </button>
-            <p className="text-gray-600 mt-2 hidden md:block">Monitor your surveillance system</p>
           </div>
-          <button
-            onClick={toggleDetection}
-            className={`px-6 py-2 rounded-lg text-white font-semibold ${
-              (detectionActive) ? 'bg-green-500 hover:bg-green-600' : 'bg-red-500 hover:bg-red-600'
-            }`}
-          >
-            Detection: {(detectionActive) ? 'ON' : 'OFF'}
-          </button>
         </div>
-      </div>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-        <div className="bg-white rounded-lg shadow p-6">
-          <p className="text-gray-600 text-sm font-semibold">Total Alerts</p>
-          <p className="text-3xl font-bold text-blue-500 mt-2">{stats?.total || 0}</p>
-        </div>
-        <div className="bg-white rounded-lg shadow p-6">
-          <p className="text-gray-600 text-sm font-semibold">Pending</p>
-          <p className="text-3xl font-bold text-yellow-500 mt-2">{stats?.pending || 0}</p>
-        </div>
-        <div className="bg-white rounded-lg shadow p-6">
-          <p className="text-gray-600 text-sm font-semibold">Resolved</p>
-          <p className="text-3xl font-bold text-green-500 mt-2">{stats?.resolved || 0}</p>
-        </div>
-        <div className="bg-white rounded-lg shadow p-6">
-          <p className="text-gray-600 text-sm font-semibold">Responded</p>
-          <p className="text-3xl font-bold text-blue-500 mt-2">{stats?.responded || 0}</p>
-        </div>
-      </div>
-
-      {/* Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        {/* Alert Status Chart */}
-        <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-xl font-bold mb-4">Alert Status Distribution</h2>
-          <ResponsiveContainer width="100%" height={300}>
-            <PieChart>
-              <Pie
-                data={chartData}
-                cx="50%"
-                cy="50%"
-                labelLine={false}
-                label={({ name, value }) => `${name}: ${value}`}
-                outerRadius={100}
-                fill="#8884d8"
-                dataKey="value"
+        {/* Cameras Section */}
+        <div className="mb-8">
+          <h2 className="text-2xl font-bold mb-4">Your Cameras</h2>
+          {cameraLoading ? (
+            <div className="text-center py-8">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
+            </div>
+          ) : cameras.length === 0 ? (
+            <div className="bg-white rounded-lg shadow p-8 text-center">
+              <p className="text-gray-600 mb-4">No cameras added yet</p>
+              <button
+                onClick={onAddCamera}
+                className="px-6 py-2 rounded-lg text-white font-semibold bg-blue-500 hover:bg-blue-600 transition-colors"
               >
-                {COLORS.map((color, index) => (
-                  <Cell key={`cell-${index}`} fill={color} />
-                ))}
-              </Pie>
-              <Tooltip />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
-
-        {/* Alerts Timeline */}
-        <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-xl font-bold mb-4">Recent Activity</h2>
-          <div className="space-y-3">
-            {alerts.slice(0, 5).map(alert => (
-              <div key={alert.alert_id} className="border-l-4 border-blue-500 pl-4 py-2">
-                <p className="font-semibold text-gray-800">Alert #{alert.alert_id}</p>
-                <p className="text-sm text-gray-600">{alert.timestamp}</p>
-                <span className={`inline-block mt-1 px-2 py-1 rounded text-xs font-semibold ${
-                  alert.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                  alert.status === 'resolved' ? 'bg-green-100 text-green-800' :
-                  'bg-blue-100 text-blue-800'
-                }`}>
-                  {alert.status.toUpperCase()}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Alerts Table */}
-      <div className="bg-white rounded-lg shadow overflow-hidden">
-        <div className="p-6 border-b">
-          <h2 className="text-xl font-bold">All Alerts</h2>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">ID</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">Time</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">Status</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">Response</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {alerts.map(alert => (
-                <tr key={alert.alert_id} className="border-t hover:bg-gray-50">
-                  <td className="px-6 py-4 text-sm font-medium">#{alert.alert_id}</td>
-                  <td className="px-6 py-4 text-sm">{alert.timestamp}</td>
-                  <td className="px-6 py-4 text-sm">
-                    <span className={`px-2 py-1 rounded text-xs font-semibold ${
-                      alert.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                      alert.status === 'resolved' ? 'bg-green-100 text-green-800' :
-                      'bg-blue-100 text-blue-800'
-                    }`}>
-                      {alert.status}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-sm">{alert.user_response || '-'}</td>
-                  <td className="px-6 py-4 text-sm">
-                    <button 
-                      className="text-blue-500 hover:underline"
-                      onClick={() => onViewAlertDetails(alert.alert_id)}
-                    >
-                      View Details
-                    </button>
-                  </td>
-                </tr>
+                Add Your First Camera
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {cameras.map(camera => (
+                <div
+                  key={camera.camera_id}
+                  onClick={() => handleCameraClick(camera.camera_id)}
+                  className={`rounded-lg shadow p-6 cursor-pointer transition-all transform hover:scale-105 ${
+                    camera.model_active
+                      ? 'bg-green-100 border-l-4 border-green-500'
+                      : 'bg-red-100 border-l-4 border-red-500'
+                  }`}
+                >
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <h3 className="text-lg font-bold text-gray-800">{camera.camera_name}</h3>
+                      <p className="text-sm text-gray-600 mt-1">
+                        {camera.model_active ? '🟢 Running' : '🔴 Inactive'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="mt-3 text-sm text-gray-700">
+                    <p>Alerts: {getCameraAlerts(camera.camera_id).length}</p>
+                  </div>
+                </div>
               ))}
-            </tbody>
-          </table>
+            </div>
+          )}
         </div>
+
+        {/* Overall Stats and Charts */}
+        {cameras.length > 0 && (
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+              <div className="bg-white rounded-lg shadow p-6">
+                <p className="text-gray-600 text-sm font-semibold">Total Alerts</p>
+                <p className="text-3xl font-bold text-blue-500 mt-2">{stats?.total || 0}</p>
+              </div>
+              <div className="bg-white rounded-lg shadow p-6">
+                <p className="text-gray-600 text-sm font-semibold">Pending</p>
+                <p className="text-3xl font-bold text-yellow-500 mt-2">{stats?.pending || 0}</p>
+              </div>
+              <div className="bg-white rounded-lg shadow p-6">
+                <p className="text-gray-600 text-sm font-semibold">Resolved</p>
+                <p className="text-3xl font-bold text-green-500 mt-2">{stats?.resolved || 0}</p>
+              </div>
+              <div className="bg-white rounded-lg shadow p-6">
+                <p className="text-gray-600 text-sm font-semibold">Responded</p>
+                <p className="text-3xl font-bold text-blue-500 mt-2">{stats?.responded || 0}</p>
+              </div>
+            </div>
+
+            {/* All Alerts Table */}
+            <div className="bg-white rounded-lg shadow overflow-hidden">
+              <div className="p-6 border-b">
+                <h2 className="text-xl font-bold">All Alerts</h2>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">ID</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">Camera</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">Time</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">Status</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">Response</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {alerts.length === 0 ? (
+                      <tr>
+                        <td colSpan="6" className="px-6 py-4 text-center text-gray-600">
+                          No alerts yet
+                        </td>
+                      </tr>
+                    ) : (
+                      alerts.map(alert => (
+                        <tr key={alert.alert_id} className="border-t hover:bg-gray-50">
+                          <td className="px-6 py-4 text-sm font-medium">#{alert.alert_id}</td>
+                          <td className="px-6 py-4 text-sm">
+                            {cameras.find(c => c.camera_id === alert.camera_id)?.camera_name || 'Unknown'}
+                          </td>
+                          <td className="px-6 py-4 text-sm">{alert.timestamp}</td>
+                          <td className="px-6 py-4 text-sm">
+                            <span className={`px-2 py-1 rounded text-xs font-semibold ${
+                              alert.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                              alert.status === 'resolved' ? 'bg-green-100 text-green-800' :
+                              'bg-blue-100 text-blue-800'
+                            }`}>
+                              {alert.status}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 text-sm">{alert.user_response || '-'}</td>
+                          <td className="px-6 py-4 text-sm">
+                            <button 
+                              className="text-blue-500 hover:underline"
+                              onClick={() => onViewAlertDetails(alert.alert_id)}
+                            >
+                              View Details
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
